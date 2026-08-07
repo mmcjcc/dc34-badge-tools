@@ -119,6 +119,16 @@ byte = (x + y*128) / 8        bit = (x + y*128) % 8       (LSB = leftmost pixel)
 
 i.e. **row-major, 16 bytes per row, LSB-first**.
 
+**Verified on hardware** with `tools/make_cal.py`, which writes raw framebuffer bytes and
+bypasses any pixel model:
+
+| Bytes set | Row-major predicts | SH1107-native predicts | Observed |
+|---|---|---|---|
+| `0..15` | horizontal line across the top | vertical line down the left | **horizontal, across the top** |
+| `1024` | 8px horizontal dash at mid-height | 8px vertical dash | **horizontal dash, mid-height** |
+
+Row-major is therefore confirmed, and no transform is needed (`transform = id`).
+
 ### Panel addressing
 
 `draw()` uses `SetAddressMode(AddressMode::Column)` (vertical addressing) and ships the
@@ -153,11 +163,24 @@ battery, since the field is then unlit.
 
 ```bash
 # render a design, encode it, and emit 32 "image <base64>" lines
-python tools/gen_image.py out.txt F transpose inv
+#   designs:    F | skull | grid | peach
+#   transform:  id (correct on hardware) | transpose | rot90/180/270 | fliph | flipv
+#   polarity:   inv (dark art on lit field) | norm (lit art on dark field)
+python tools/gen_image.py out.txt peach id inv
 
 # stream it to the badge
 powershell -File tools/send_image.ps1 -Port COM4 -File out.txt
+
+# raw byte-mapping calibration frame (see "Framebuffer layout")
+python tools/make_cal.py cal.txt
 ```
+
+### Designing for this panel
+
+The OLED is 128x128 and 1bpp, and the badge redraws asynchronously — photographs often
+catch a torn frame with a diagonal seam across it. **Keep every feature at least ~4px
+thick.** Fine 1-2px linework disintegrates: a bold block "F" reads perfectly while a
+delicate line-art portrait at the same size does not survive.
 
 `tools/serial.ps1` is a minimal one-shot console helper:
 

@@ -104,15 +104,16 @@ def design_peach():
     d = ImageDraw.Draw(img)
     cx = 64
 
-    # ---- hair: outlined (blonde reads light), face inside ---------------
-    d.ellipse([26, 27, 102, 103], outline=1, width=2)
-    d.ellipse([24, 56, 50, 120], outline=1, width=2)   # long lobe L
-    d.ellipse([78, 56, 104, 120], outline=1, width=2)  # long lobe R
-    d.ellipse([43, 34, 85, 92], outline=1, width=2)    # face
-    d.arc([43, 30, 85, 70], 185, 355, fill=1, width=3) # fringe
-    for sx, sy, ex, ey in ((33, 70, 39, 108), (41, 66, 45, 100),
-                           (95, 70, 89, 108), (87, 66, 83, 100)):
-        d.line([(sx, sy), (ex, ey)], fill=1, width=1)  # hair strands
+    # ---- hair: THICK ring so blonde reads light, face inside ------------
+    # Everything here is >=4px: fine linework does not survive on this panel.
+    d.ellipse([22, 24, 106, 108], fill=1)      # hair silhouette (solid)
+    d.ellipse([28, 30, 100, 102], fill=0)      # hollow it out -> thick ring
+    d.ellipse([20, 54, 50, 122], fill=1)       # long lobe L
+    d.ellipse([26, 60, 44, 116], fill=0)
+    d.ellipse([78, 54, 108, 122], fill=1)      # long lobe R
+    d.ellipse([84, 60, 102, 116], fill=0)
+    d.ellipse([40, 32, 88, 94], fill=0)        # face opening
+    d.arc([40, 28, 88, 76], 185, 355, fill=1, width=6)   # fringe
 
     # ---- crown: band + three points --------------------------------------
     d.rectangle([46, 23, 82, 32], fill=1)
@@ -124,21 +125,22 @@ def design_peach():
     d.ellipse([74, 15, 79, 20], fill=0)
     d.rectangle([50, 26, 78, 29], fill=0)
 
-    # ---- gown -------------------------------------------------------------
-    d.rectangle([58, 90, 70, 99], fill=0, outline=1)   # neck
-    d.polygon([(56, 97), (72, 97), (103, 127), (25, 127)], fill=0, outline=1)
-    d.ellipse([21, 93, 49, 121], fill=0, outline=1)    # puff sleeve L
-    d.ellipse([79, 93, 107, 121], fill=0, outline=1)   # puff sleeve R
-    d.line([(29, 122), (99, 122)], fill=1, width=2)
-    d.ellipse([59, 98, 69, 108], fill=1)               # brooch
-    d.ellipse([62, 101, 66, 105], fill=0)
+    # ---- gown (bold) ------------------------------------------------------
+    d.polygon([(54, 100), (74, 100), (104, 127), (24, 127)], fill=1)
+    d.polygon([(58, 106), (70, 106), (94, 127), (34, 127)], fill=0)
+    d.ellipse([18, 96, 48, 126], fill=1)               # puff sleeve L
+    d.ellipse([24, 102, 42, 120], fill=0)
+    d.ellipse([80, 96, 110, 126], fill=1)              # puff sleeve R
+    d.ellipse([86, 102, 104, 120], fill=0)
+    d.ellipse([56, 96, 72, 112], fill=1)               # brooch
+    d.ellipse([61, 101, 67, 107], fill=0)
 
-    # ---- face ------------------------------------------------------------
-    d.ellipse([52, 56, 60, 68], fill=1)                # eyes
-    d.ellipse([68, 56, 76, 68], fill=1)
-    d.ellipse([54, 59, 57, 63], fill=0)                # catchlights
-    d.ellipse([70, 59, 73, 63], fill=0)
-    d.arc([57, 70, 71, 82], 20, 160, fill=1)           # smile
+    # ---- face (bold) ------------------------------------------------------
+    d.ellipse([50, 54, 61, 70], fill=1)                # eyes
+    d.ellipse([67, 54, 78, 70], fill=1)
+    d.ellipse([53, 58, 57, 64], fill=0)                # catchlights
+    d.ellipse([70, 58, 74, 64], fill=0)
+    d.arc([55, 70, 73, 86], 25, 155, fill=1, width=4)  # smile
 
     d.rectangle([0, 0, W - 1, H - 1], outline=1)
     return img
