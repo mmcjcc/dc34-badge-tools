@@ -203,6 +203,115 @@ def design_defcon():
     return img
 
 
+# ---------------------------------------------------------------------------
+# Space Invaders: authentic 1978 sprite art. A 1-bit 128x128 panel is the
+# native medium for this game, so no dithering or greyscale fakery is needed.
+# ---------------------------------------------------------------------------
+SPRITES = {
+    "squid": [
+        "...##...",
+        "..####..",
+        ".######.",
+        "##.##.##",
+        "########",
+        "..#..#..",
+        ".#.##.#.",
+        "#.#..#.#",
+    ],
+    "crab": [
+        "..#.....#..",
+        "...#...#...",
+        "..#######..",
+        ".##.###.##.",
+        "###########",
+        "#.#######.#",
+        "#.#.....#.#",
+        "...##.##...",
+    ],
+    # 11 wide to match the crab: at scale 2 that is 22px on a 23px pitch,
+    # so adjacent columns keep a 1px gap instead of fusing into a blob.
+    "octopus": [
+        "...#####...",
+        ".#########.",
+        "###########",
+        "##..###..##",
+        "###########",
+        "..##.#.##..",
+        ".##..#..##.",
+        "##.......##",
+    ],
+    "cannon": [
+        "......#......",
+        ".....###.....",
+        ".....###.....",
+        ".###########.",
+        "#############",
+        "#############",
+        "#############",
+        "#############",
+    ],
+    "ufo": [
+        "....########....",
+        "..############..",
+        ".##############.",
+        "##.###.##.###.##",
+        "################",
+        "..###..##..###..",
+        "....##....##....",
+    ],
+}
+
+
+def blit(img, sprite, x, y, scale=1, fill=1):
+    """Draw string-art sprite at (x,y). '#' = ink."""
+    d = ImageDraw.Draw(img)
+    for row, line in enumerate(sprite):
+        for col, ch in enumerate(line):
+            if ch != "#":
+                continue
+            px, py = x + col * scale, y + row * scale
+            if scale == 1:
+                if 0 <= px < W and 0 <= py < H:
+                    d.point((px, py), fill=fill)
+            else:
+                d.rectangle([px, py, px + scale - 1, py + scale - 1], fill=fill)
+
+
+def design_invaders():
+    """Attract-mode frame: the layout we'll port to firmware."""
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+
+    _text_at(d, 34, 2, "SCORE", 11)
+    _text_at(d, 34, 13, "0340", 11)
+    _text_at(d, 96, 2, "HI", 11)
+    _text_at(d, 96, 13, "9990", 11)
+
+    blit(img, SPRITES["ufo"], 48, 26, scale=2)          # mystery ship
+
+    # 3 rows x 5 columns at scale 2: sprite is 16px tall, so the row pitch must
+    # exceed 16 or the rows fuse. 23px column pitch leaves a 1px gap.
+    rows = ["squid", "crab", "octopus"]
+    for r, kind in enumerate(rows):
+        sp = SPRITES[kind]
+        wpx = len(sp[0]) * 2
+        for c in range(5):
+            x = 6 + c * 23 + (22 - wpx) // 2
+            blit(img, sp, x, 44 + r * 18, scale=2)
+
+    # bunkers
+    for b in range(4):
+        bx = 12 + b * 28
+        d.rectangle([bx, 98, bx + 18, 106], fill=1)
+        d.rectangle([bx + 6, 103, bx + 12, 107], fill=0)
+
+    blit(img, SPRITES["cannon"], 56, 110, scale=2)      # player
+    d.line([(0, 127), (127, 127)], fill=1, width=1)     # ground
+    for bx, by in ((30, 88), (92, 82)):                 # in-flight shots
+        d.line([(bx, by), (bx, by + 5)], fill=1, width=2)
+    return img
+
+
 def _text_at(d, cx, y, text, sz, fill=1):
     f = font(sz)
     try:
@@ -333,6 +442,7 @@ def design_sos():
 
 DESIGNS = {"F": design_F, "skull": design_skull,
            "bright": design_bright, "dark": design_dark, "sos": design_sos,
+           "invaders": design_invaders,
            "mario": design_mario, "luigi": design_luigi,
            "toad": design_toad, "boo": design_boo,
            "grid": design_grid, "peach": design_peach,
