@@ -13,7 +13,7 @@ logical buffer appears TRANSPOSED on glass; `transform` compensates.
 Polarity: init uses SetDisplayMode(WhiteOnBlack) = 0xA7 (reverse), and
 clear() fills 0xFFFFFFFF -> bit 1 = dark. So ink must be 0, field 1.
 """
-import base64, struct, sys, zlib
+import base64, math, struct, sys, zlib
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 W = H = 128
@@ -146,8 +146,192 @@ def design_peach():
     return img
 
 
+def design_mushroom():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+    d.pieslice([12, 16, 116, 112], 180, 360, fill=1)   # cap
+    d.rectangle([12, 62, 116, 72], fill=1)
+    for box in ([28, 32, 54, 58], [74, 32, 100, 58],
+                [54, 20, 74, 40], [16, 48, 34, 66], [94, 48, 112, 66]):
+        d.ellipse(box, fill=0)                          # spots
+    d.rectangle([40, 72, 88, 118], fill=1)              # stem
+    d.rectangle([47, 79, 81, 112], fill=0)
+    d.ellipse([52, 86, 61, 100], fill=1)                # eyes
+    d.ellipse([67, 86, 76, 100], fill=1)
+    return img
+
+
+def design_star():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+    pts = []
+    for i in range(10):
+        ang = math.radians(-90 + i * 36.0)
+        rad = 58 if i % 2 == 0 else 25
+        pts.append((64 + rad * math.cos(ang), 64 + rad * math.sin(ang)))
+    d.polygon(pts, fill=1)
+    d.ellipse([49, 54, 60, 72], fill=0)                 # eyes
+    d.ellipse([68, 54, 79, 72], fill=0)
+    d.arc([54, 74, 74, 90], 20, 160, fill=0, width=4)   # smile
+    return img
+
+
+def design_defcon():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+    d.rectangle([4, 4, W - 5, W - 5], outline=1)
+
+    def ctr(y, text, sz):
+        f = font(sz)
+        try:
+            l, _, r, _ = d.textbbox((0, 0), text, font=f)
+            w, off = r - l, l
+        except Exception:
+            w, off = d.textsize(text, font=f)[0], 0
+        d.text(((W - w) // 2 - off, y), text, font=f, fill=1)
+
+    ctr(14, "DEF CON", 24)
+    ctr(44, "34", 34)
+    d.line([(20, 88), (108, 88)], fill=1, width=3)
+    ctr(96, "HUMAN", 20)
+    return img
+
+
+def _text_at(d, cx, y, text, sz, fill=1):
+    f = font(sz)
+    try:
+        l, _, r, _ = d.textbbox((0, 0), text, font=f)
+        w, off = r - l, l
+    except Exception:
+        w, off = d.textsize(text, font=f)[0], 0
+    d.text((cx - w // 2 - off, y), text, font=f, fill=fill)
+
+
+def _plumber(letter, tall=False):
+    """Shared Mario/Luigi portrait. tall=True gives Luigi's longer face."""
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+
+    top = 4 if tall else 10
+    d.pieslice([24, top, 104, 74], 180, 360, fill=1)      # cap dome
+    d.rectangle([24, 44, 104, 58], fill=1)
+    d.ellipse([12, 46, 116, 72], fill=1)                  # brim
+    d.ellipse([50, top + 12, 78, top + 40], fill=0)       # badge
+    _text_at(d, 64, top + 14, letter, 24, fill=1)
+
+    # sideburns
+    d.polygon([(26, 68), (40, 68), (40, 100), (28, 90)], fill=1)
+    d.polygon([(102, 68), (88, 68), (88, 100), (100, 90)], fill=1)
+
+    ey = 78 if tall else 76
+    d.ellipse([48, ey, 57, ey + 14], fill=1)              # eyes
+    d.ellipse([71, ey, 80, ey + 14], fill=1)
+
+    ny = 92 if tall else 88
+    d.ellipse([54, ny, 74, ny + 16], fill=0, outline=1, width=3)   # nose
+
+    my = 110 if tall else 106
+    d.ellipse([26, my, 66, my + 14], fill=1)              # moustache
+    d.ellipse([62, my, 102, my + 14], fill=1)
+    d.rectangle([60, my + 2, 68, my + 12], fill=1)
+    return img
+
+
+def design_mario():
+    return _plumber("M", tall=False)
+
+
+def design_luigi():
+    return _plumber("L", tall=True)
+
+
+def design_toad():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+    d.pieslice([8, 8, 120, 104], 180, 360, fill=1)        # mushroom cap
+    d.rectangle([8, 54, 120, 66], fill=1)
+    for box in ([24, 24, 50, 50], [78, 24, 104, 50],
+                [54, 14, 74, 34], [12, 40, 30, 58], [98, 40, 116, 58]):
+        d.ellipse(box, fill=0)                            # spots
+    d.ellipse([34, 62, 94, 122], fill=0, outline=1, width=3)   # head
+    d.ellipse([48, 78, 58, 96], fill=1)                   # eyes
+    d.ellipse([70, 78, 80, 96], fill=1)
+    d.arc([54, 96, 74, 112], 20, 160, fill=1, width=3)    # mouth
+    d.ellipse([36, 92, 46, 102], fill=1)                  # cheeks
+    d.ellipse([82, 92, 92, 102], fill=1)
+    return img
+
+
+def design_boo():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+    # Boo is white, so draw him as outline. Use arc(), not pieslice() --
+    # pieslice also strokes the flat chord and leaves a bar across the face.
+    d.arc([18, 14, 110, 106], 180, 360, fill=1, width=4)  # dome
+    d.line([(20, 60), (20, 94)], fill=1, width=4)         # sides
+    d.line([(108, 60), (108, 94)], fill=1, width=4)
+    for i in range(4):                                    # scalloped tail
+        x0 = 20 + i * 22
+        d.arc([x0, 78, x0 + 22, 114], 0, 180, fill=1, width=4)
+    d.ellipse([8, 62, 36, 90], fill=0, outline=1, width=4)    # arms
+    d.ellipse([92, 62, 120, 90], fill=0, outline=1, width=4)
+    d.ellipse([46, 48, 58, 68], fill=1)                   # eyes
+    d.ellipse([70, 48, 82, 68], fill=1)
+    d.chord([52, 72, 76, 96], 0, 180, fill=1)             # open mouth
+    return img
+
+
+def design_bright():
+    """No ink at all -> whole panel lit. The 'on' frame for blinking."""
+    return Image.new("1", (W, H), 0)
+
+
+def design_dark():
+    """All ink -> whole panel dark. The 'off' frame for blinking."""
+    return Image.new("1", (W, H), 1)
+
+
+def design_sos():
+    img = Image.new("1", (W, H), 0)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W - 1, H - 1], outline=1)
+
+    def ctr(y, text, sz):
+        f = font(sz)
+        try:
+            l, _, r, _ = d.textbbox((0, 0), text, font=f)
+            w, off = r - l, l
+        except Exception:
+            w, off = d.textsize(text, font=f)[0], 0
+        d.text(((W - w) // 2 - off, y), text, font=f, fill=1)
+
+    ctr(12, "SOS", 40)
+    # ... --- ...  drawn as bold morse
+    y = 68
+    x = 12
+    for group in ((6, 6, 6), (18, 18, 18), (6, 6, 6)):
+        for wdt in group:
+            d.rectangle([x, y, x + wdt, y + 10], fill=1)
+            x += wdt + 6
+        x += 8
+    d.line([(12, 96), (116, 96)], fill=1, width=2)
+    ctr(102, "-- -.. .-", 16)
+    return img
+
+
 DESIGNS = {"F": design_F, "skull": design_skull,
-           "grid": design_grid, "peach": design_peach}
+           "bright": design_bright, "dark": design_dark, "sos": design_sos,
+           "mario": design_mario, "luigi": design_luigi,
+           "toad": design_toad, "boo": design_boo,
+           "grid": design_grid, "peach": design_peach,
+           "mushroom": design_mushroom, "star": design_star,
+           "defcon": design_defcon}
 
 TRANSFORMS = {
     "id":        lambda im: im,
@@ -188,7 +372,10 @@ def encode(img, ink_is_one, order="rev32"):
             if ink != ink_is_one:
                 continue
             bn = x + y * W
-            if order == "rev32":
+            if order == "bswap":
+                byte = ((bn >> 5) << 2) + 3 - ((bn & 31) >> 3)
+                bit = bn & 7
+            elif order == "rev32":
                 k = 31 - (bn & 31)
                 byte = ((bn >> 5) << 2) + (k >> 3)
                 bit = k & 7
@@ -203,7 +390,7 @@ def encode(img, ink_is_one, order="rev32"):
 def main():
     out, design, xf = sys.argv[1], sys.argv[2], sys.argv[3]
     pol = sys.argv[4] if len(sys.argv) > 4 else "inv"   # inv => ink bit = 1
-    bits = sys.argv[5] if len(sys.argv) > 5 else "rev32"  # lsb | msb | rev32
+    bits = sys.argv[5] if len(sys.argv) > 5 else "bswap"  # lsb|msb|bswap|rev32
     img = DESIGNS[design]()
     # Preview rendered as the panel will actually show it: with pol=inv the
     # ink bit is 1 which reads DARK on a lit field, so invert for the preview.
@@ -222,4 +409,5 @@ def main():
     print("wrote %s  design=%s transform=%s chunks=%d" % (out, design, xf, len(lines)))
 
 
-main()
+if __name__ == "__main__":
+    main()

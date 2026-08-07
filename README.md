@@ -129,38 +129,45 @@ bypasses any pixel model:
 
 Row-major is confirmed, and no transform is needed (`transform = id`).
 
-### Bit order: the part that actually costs you an evening
+### Byte order: the part that actually costs you an evening
 
 The framebuffer is **`[u32; 512]`, not a byte array**, and that is the whole difficulty.
-Reading `put_pixel()` implies LSB-first — but the correct on-the-wire mapping reverses the
-full 32-bit word:
+**Confirmed on hardware:** the panel consumes each `u32` as **big-endian bytes**, while
+bits *within* each byte stay **LSB-first** (bit 0 is the leftmost pixel):
 
 ```
-pixel bn = x + y*128  occupies  bit 31-(bn%32)  of little-endian word bn/32
-    byte = 4*(bn/32) + (31-(bn%32))/8
-    bit  = (31-(bn%32))%8
+pixel bn = x + y*128        w = bn/32,  m = bn%32
+    byte = 4*w + 3 - (m/8)          <- the four bytes of each word are reversed
+    bit  = bn%8                     <- but the bits inside a byte are NOT
 ```
 
-`tools/gen_image.py` implements this as `order = rev32` (the default). The two wrong
-answers fail in distinct, recognisable ways — worth knowing, because each one looks like a
-different bug:
+`tools/gen_image.py` implements this as `order = bswap` (the default). The wrong answers
+fail in distinct, recognisable ways — worth knowing, because each looks like a *different*
+bug:
 
-| Order | What breaks | What it looks like |
+| Order | What it does | What you see |
 |---|---|---|
-| `lsb` | each 8px group mirrored in place | thick bars survive (a 20px bar spans ~3 cells and stays solid); curves shatter into a mirrored kaleidoscope |
-| `msb` | bits right, but the 4 bytes of each word reversed | shapes are smooth, yet rearranged in 8px blocks inside each 32px cell — **centred features appear duplicated** |
-| `rev32` | — | correct |
-
-`rev32` is exactly `msb` with the four bytes of each word reversed.
+| `lsb` | the literal reading of `put_pixel()` | every 8px group mirrored in place; thick bars survive (a 20px bar spans ~3 cells and stays solid) while curves shatter into a kaleidoscope |
+| `msb` | reverses bits, not bytes | smooth curves, but features rearranged — **centred detail appears duplicated** |
+| `rev32` | reverses bits *and* bytes | single centred crown but a sheared, jagged body — one step too far |
+| `bswap` | reverses bytes only | **correct** |
 
 **A calibration frame of solid `0xFF` bytes cannot detect any of this**, because `0xFF` is
 symmetric under both bit and byte reversal — the very test you would reach for reports
-success while the bug is live. Use asymmetric bytes: `make_cal.py` writes `0xC0`, which
-lands at the **left** of each 8px cell when correct and the **right** when reversed.
+success while the bug is live. `make_cal.py` therefore also writes `0xC0`.
 
 The duplication artefact is the most misleading part: a doubled crown or mirrored eyes
 reads as a *framebuffer layout* problem and sends you hunting for a rotation or transpose
-that does not exist. It is a byte-order bug, one level below where you are looking.
+that does not exist. It is a byte-order bug one level below where you are looking.
+
+### Identifying the order without guessing
+
+Encoding and decoding are both permutations of pixel positions, so if you encode with
+order `O` and the panel decodes with true order `T`, the glass shows
+`D = decode_T(encode_O(I))`. `tools/sim.py` and `tools/sim_grid.py` render `D` for every
+candidate `T` and compare against a photo of the real screen — the row that matches
+identifies `T`. That is how `bswap` was pinned down, from photos already taken, with no
+further hardware round trips. It beats guessing transforms one upload at a time.
 
 ### Panel addressing
 
@@ -240,9 +247,33 @@ contribute haploid gene sets and the offspring pattern is a recombination, with 
 mutation rate. That is the actual puzzle.
 
 *Status:* the LED control verbs (`hue`, `autogamy`, `transmute`, `mate`, `bt`, `rate`) are
-**absent from this production build** — every one returns the generic `test` help line.
-They appear to be compiled out behind `misc-test` / `qa-test` feature gates, consistent
-with `test accel`, `test adc`, `test cam` and `test qrshow` also being absent.
+**absent from this production build**, and the proof is clean. A command that genuinely
+exists but is under-specified returns its *own* usage string:
+
+```
+> test bootwait
+bootwait [check | enable | disable]
+```
+
+whereas every LED verb falls through to the *generic* help line:
+
+```
+> test hue
+test [proc] [freemem] [interrupts] [bootwait]; see code for other test commands.
+```
+
+So they are compiled out (behind `misc-test` / `qa-test` feature gates), not merely
+undocumented — consistent with `test accel`, `test adc`, `test cam` and `test qrshow`
+also being absent. **There is no LED control path from the console on shipped firmware.**
+
+The remaining route to blinking anything is the BIO coprocessor driving SAO pins, which
+needs an add-on with LEDs on it — and loading your own code is exactly what the badge
+documentation warns trips developer mode and erases the provisioned secrets. Since those
+secrets are what make the light exchange work, that trade is a bad one if you are actually
+playing the challenge.
+
+What you *can* drive is the OLED, which is the badge's other light source:
+`tools/morse.ps1` blinks the whole panel in morse code (`-Message SOS`).
 
 ---
 
