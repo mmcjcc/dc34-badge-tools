@@ -1,0 +1,13 @@
+diff --git a/services/bao-console/Cargo.toml b/services/bao-console/Cargo.toml
+index aef805f47..583fac2ad 100644
+--- a/services/bao-console/Cargo.toml
++++ b/services/bao-console/Cargo.toml
+@@ -28,7 +28,7 @@ susres = { path = "../../api/xous-api-susres", package = "xous-api-susres" }
+ keystore = { path = "../keystore" }
+ keystore-api = { path = "../../libs/keystore-api" }
+ 
+-bio-lib = { path = "../../libs/bio-lib", optional = true }
++bio-lib = { path = "../../libs/bio-lib", optional = true, features = ["ws2812"]}
+ arbitrary-int = "1.2"
+ 
+ # pddb testing

@@ -1,0 +1,19 @@
+diff --git a/xtask/src/main.rs b/xtask/src/main.rs
+index d7758aac6..e9421921a 100644
+--- a/xtask/src/main.rs
++++ b/xtask/src/main.rs
+@@ -1219,12 +1219,11 @@ fn baosec_common(builder: &mut Builder) -> std::io::Result<()> {
+         "xous-names",
+         "usb-bao1x",
+         "bao1x-hal-service",
+-        "modals",
+-        "pddb",
++        "bao-console",
+         "bao-video",
+     ]
+     .to_vec();
+-    let bao_swap_pkgs = [].to_vec();
++    let bao_swap_pkgs = ["modals", "pddb"].to_vec();
+     if !builder.is_swap_set() {
+         // reserve 3MiB for system services: ultimately, "pddb, modals, and bao-video"
+         builder.set_swap(0, bao1x_api::offsets::baosec::SWAP_RAM_LEN as _);

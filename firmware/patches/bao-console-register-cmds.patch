@@ -1,0 +1,37 @@
+diff --git a/services/bao-console/src/cmds.rs b/services/bao-console/src/cmds.rs
+index 6f3d48a0f..4ceadbadc 100644
+--- a/services/bao-console/src/cmds.rs
++++ b/services/bao-console/src/cmds.rs
+@@ -101,6 +101,12 @@ mod i2cdetect;
+ use i2cdetect::*;
+ mod cute;
+ use cute::*;
++mod led;
++use led::*;
++mod screen;
++use screen::*;
++mod invaders;
++use invaders::*;
+ #[cfg(feature = "rramtests")]
+ mod rram;
+ #[cfg(feature = "rramtests")]
+@@ -167,6 +173,9 @@ impl CmdEnv {
+         #[cfg(not(feature = "hosted-baosec"))]
+         let mut i2cdetect_cmd = I2cDetect {};
+         let mut cute_cmd = Cute {};
++        let mut led_cmd = Led {};
++        let mut screen_cmd = Screen {};
++        let mut invaders_cmd = Invaders {};
+ 
+         let commands: &mut [&mut dyn ShellCmdApi] = &mut [
+             ///// 4. add your command to this array, so that it can be looked up and dispatched
+@@ -176,6 +185,9 @@ impl CmdEnv {
+             #[cfg(not(feature = "hosted-baosec"))]
+             &mut i2cdetect_cmd,
+             &mut cute_cmd,
++            &mut led_cmd,
++            &mut screen_cmd,
++            &mut invaders_cmd,
+             &mut console_cmd,
+             #[cfg(feature = "usb")]
+             &mut self.usb,

@@ -1,0 +1,34 @@
+diff --git a/services/bao1x-hal-service/src/servers/bio.rs b/services/bao1x-hal-service/src/servers/bio.rs
+index e64806d9e..a713da1f4 100644
+--- a/services/bao1x-hal-service/src/servers/bio.rs
++++ b/services/bao1x-hal-service/src/servers/bio.rs
+@@ -16,7 +16,9 @@ fn bio_service() {
+     let mut resource_tracker = ResourceTracker::new();
+ 
+     #[cfg(feature = "oem-baosec-lite")]
+-    let led_conn = xns.request_connection_blocking("_oem_led_").unwrap();
++    // PATCHED: "_oem_led_" is proprietary to dc34-vault and is never registered
++    // in the open-source tree; blocking on it deadlocks the whole BIO service.
++    let led_conn: Option<xous::CID> = xns.request_connection("_oem_led_").ok();
+ 
+     let clk_mgr = bao1x_hal_service::ClockManager::new();
+     let mut bio_ss = bio_hw::BioSharedState::new(clk_mgr.get_fclk());
+@@ -133,11 +135,13 @@ fn bio_service() {
+                 if let Some(_scalar) = msg_opt.as_mut().unwrap().body.scalar_message_mut() {
+                     // pause rendering while the clock transitions, avoiding 'bright glitches'
+                     #[cfg(feature = "oem-baosec-lite")]
+-                    xous::send_message(
+-                        led_conn,
+-                        xous::Message::new_blocking_scalar(128, _scalar.arg1, 0, 0, 0),
+-                    )
+-                    .ok();
++                    if let Some(lc) = led_conn {
++                        xous::send_message(
++                            lc,
++                            xous::Message::new_blocking_scalar(128, _scalar.arg1, 0, 0, 0),
++                        )
++                        .ok();
++                    }
+                 }
+             }
+ 
