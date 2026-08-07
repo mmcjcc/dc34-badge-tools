@@ -129,26 +129,38 @@ bypasses any pixel model:
 
 Row-major is confirmed, and no transform is needed (`transform = id`).
 
-### Bit order: the trap
+### Bit order: the part that actually costs you an evening
 
-Reading `put_pixel()` implies **LSB-first** (`x` increasing means bit index increasing).
-**That is wrong on real hardware — the panel latches each byte MSB-first, so bit 7 is the
-leftmost pixel of its 8-pixel cell.**
+The framebuffer is **`[u32; 512]`, not a byte array**, and that is the whole difficulty.
+Reading `put_pixel()` implies LSB-first — but the correct on-the-wire mapping reverses the
+full 32-bit word:
 
-Get it backwards and every group of 8 horizontal pixels is mirrored in place. The failure
-is deceptive:
+```
+pixel bn = x + y*128  occupies  bit 31-(bn%32)  of little-endian word bn/32
+    byte = 4*(bn/32) + (31-(bn%32))/8
+    bit  = (31-(bn%32))%8
+```
 
-* solid fills, thick bars and blocky glyphs still look *almost* right, because a 20px-wide
-  bar spans about three byte-cells and stays roughly solid when each cell flips;
-* curves and any feature finer than ~8px shatter into a mirrored kaleidoscope — symmetric
-  detail appears **duplicated**, which looks like a framebuffer-layout bug and sends you
-  hunting for a transform that does not exist.
+`tools/gen_image.py` implements this as `order = rev32` (the default). The two wrong
+answers fail in distinct, recognisable ways — worth knowing, because each one looks like a
+different bug:
 
-**A calibration frame of solid `0xFF` bytes cannot detect this**, because `0xFF` is
-symmetric under bit reversal — the very test you would reach for reports success. Use an
-asymmetric byte instead: `make_cal.py` writes `0xC0` across two rows, which renders as a
-2px dash at the **left** of each 8px cell when the order is correct, and at the **right**
-when it is reversed.
+| Order | What breaks | What it looks like |
+|---|---|---|
+| `lsb` | each 8px group mirrored in place | thick bars survive (a 20px bar spans ~3 cells and stays solid); curves shatter into a mirrored kaleidoscope |
+| `msb` | bits right, but the 4 bytes of each word reversed | shapes are smooth, yet rearranged in 8px blocks inside each 32px cell — **centred features appear duplicated** |
+| `rev32` | — | correct |
+
+`rev32` is exactly `msb` with the four bytes of each word reversed.
+
+**A calibration frame of solid `0xFF` bytes cannot detect any of this**, because `0xFF` is
+symmetric under both bit and byte reversal — the very test you would reach for reports
+success while the bug is live. Use asymmetric bytes: `make_cal.py` writes `0xC0`, which
+lands at the **left** of each 8px cell when correct and the **right** when reversed.
+
+The duplication artefact is the most misleading part: a doubled crown or mirrored eyes
+reads as a *framebuffer layout* problem and sends you hunting for a rotation or transpose
+that does not exist. It is a byte-order bug, one level below where you are looking.
 
 ### Panel addressing
 

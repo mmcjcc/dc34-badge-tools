@@ -1,5 +1,5 @@
 param(
-  [string]$Port = "COM4",
+  [string]$Port = "auto",    # "auto" finds the badge by USB VID/PID
   [int]$Baud = 1000000,
   [Parameter(Mandatory=$true)][string]$File,
   [int]$Max = 0,             # 0 = all
@@ -8,6 +8,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Port -eq "auto") {
+  # The badge always enumerates as VID 1D50 / PID 6198; the CDC-ACM console is
+  # interface MI_02. The COM number changes between ports, the IDs never do.
+  $dev = Get-PnpDevice -Class Ports -PresentOnly -ErrorAction SilentlyContinue |
+         Where-Object { $_.InstanceId -like '*VID_1D50&PID_6198*' } |
+         Select-Object -First 1
+  if (-not $dev) { throw "Badge not found on any COM port - is it plugged in?" }
+  $Port = [regex]::Match($dev.FriendlyName, '\((COM\d+)\)').Groups[1].Value
+  Write-Output "auto-detected badge on $Port"
+}
 $lines = Get-Content $File
 if ($Max -gt 0 -and $lines.Count -gt $Max) { $lines = $lines[0..($Max-1)] }
 
