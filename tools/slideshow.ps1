@@ -4,10 +4,22 @@ param(
   [Parameter(Mandatory=$true)][string[]]$Files,  # chunk files, in order
   [double]$Dwell = 4.0,      # seconds to hold each frame
   [int]$Loops = 1,           # how many times through the list
-  [double]$Delay = 0.015,    # inter-chunk delay
-  [int]$RespMs = 3000,
-  [int]$Retries = 3          # per-frame retries if the badge drops off USB
+  [double]$Delay = 0.01,     # inter-chunk delay
+  [int]$RespMs = 8000,       # see note below -- 3000 is too tight
+  [int]$Retries = 4          # per-frame retries if the badge drops off USB
 )
+
+# WHY RespMs IS 8000 AND NOT 3000
+# The badge's display SPI link periodically times out and resets itself:
+#   WARN bao1x_hal::udma::spim: Timeout in txrx_await()
+#   ERR  bao1x_hal::sh1107: timeout in draw (sh1107.rs:808)
+#   INFO bao_video: resetting display spim block
+# That happens on stock firmware regardless of what the host does. While the
+# vault is actively redrawing (it alternates its own screen with the uploaded
+# image), a reset can stall the console for several seconds. A frame is 32
+# chunks and ONE slow chunk fails the whole frame, so a 3s window made frames
+# fail progressively: 1 retry, then 2, then a frame dropped outright. At 8s
+# every frame lands first try. It was never a data problem -- just impatience.
 
 # WEAR: every frame is a real write to the badge's PDDB (persistent store), not
 # a framebuffer blit. Fine for a slideshow of a few frames; don't leave it

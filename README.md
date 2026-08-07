@@ -215,6 +215,40 @@ powershell -File tools/send_image.ps1 -Port COM4 -File out.txt
 python tools/make_cal.py cal.txt
 ```
 
+### Who owns the screen (and why an upload can "do nothing")
+
+`image` stores to the PDDB and signals `dc34-vault`, but **the vault owns the display** and
+alternates its own home screen with your uploaded image. Two consequences:
+
+* A frame can upload with `SUCCESS` and still not be on screen — it depends on which vault
+  screen is active. After a reboot the vault returns home, which makes a perfectly working
+  slideshow look broken.
+* Seeing `skull -> your image -> skull -> your image` is **correct behaviour**, not a bug.
+
+### Timing: give the console an 8 second response window
+
+The display SPI link times out and resets itself on stock firmware, independent of the host:
+
+```
+WARN bao1x_hal::udma::spim: Timeout in txrx_await()
+ERR  bao1x_hal::sh1107: timeout in draw (sh1107.rs:808)
+INFO bao_video: resetting display spim block
+```
+
+While the vault is actively redrawing, one of those resets can stall the console for
+seconds. A frame is 32 chunks and **one slow chunk fails the whole frame**, so too tight a
+window degrades progressively rather than failing cleanly:
+
+| Frame | 3 s window | 8 s window |
+|---|---|---|
+| mario | 1 retry | clean |
+| luigi | 2 retries | clean |
+| toad | **skipped** (3 failed) | clean |
+| peach | 1 retry | clean |
+
+`slideshow.ps1` therefore defaults to `-RespMs 8000`. It is not a data problem — just an
+impatient client.
+
 ### Designing for this panel
 
 The OLED is 128x128 and 1bpp, and the badge redraws asynchronously — photographs often
