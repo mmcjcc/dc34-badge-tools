@@ -278,19 +278,42 @@ impl<'a> ShellCmdApi<'a> for Invaders {
         let mut fb = [0xFFFF_FFFFu32; 512];
         let mut g = Game::new(_env.trng.get_u32().unwrap_or(0x1234_5678));
 
+        // Pace off the ticktimer's own clock. sleep_ms() alone did not delay
+        // (3000 frames burned in ~30s), so hold a target deadline per frame and
+        // sleep until it passes; also cap on WALL TIME rather than frame count.
+        const FRAME_MS: u64 = 100;
+        const RUN_MS: u64 = 120_000;
+        let t0 = tt.elapsed_ms();
         let mut frames = 0u32;
-        while !g.over && !quit.load(Ordering::Relaxed) && frames < 3000 {
+        let mut next = t0 + FRAME_MS;
+        let reason;
+        loop {
+            if g.over { reason = "destroyed"; break; }
+            if quit.load(Ordering::Relaxed) { reason = "quit"; break; }
+            let now = tt.elapsed_ms();
+            if now - t0 > RUN_MS { reason = "timeout"; break; }
+
             let d = dx.swap(0, Ordering::Relaxed) as isize;
             let f = fire.swap(false, Ordering::Relaxed);
             let _killed = g.step(d, f);
             g.render(&mut fb);
             gfx.bitmap(&fb, None, None).ok();
             gfx.flush().ok();
-            tt.sleep_ms(90).ok();
             frames += 1;
+
+            // spin-with-yield until the frame deadline; robust even if
+            // sleep_ms is a no-op on this build
+            loop {
+                let n = tt.elapsed_ms();
+                if n >= next { break; }
+                let remain = next - n;
+                if remain > 4 { tt.sleep_ms((remain - 2) as usize).ok(); } else { xous::yield_slice(); }
+            }
+            next += FRAME_MS;
         }
         quit.store(true, Ordering::Relaxed);
-        write!(ret, "game over - score {}", g.score).ok();
+        let secs = (tt.elapsed_ms() - t0) as f32 / 1000.0;
+        write!(ret, "game over ({}) - score {} - {} frames in {:.1}s", reason, g.score, frames, secs).ok();
         Ok(Some(ret))
     }
 }
