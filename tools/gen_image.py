@@ -161,9 +161,17 @@ TRANSFORMS = {
 }
 
 
-def encode(img, ink_is_one):
-    """ink_is_one=True  -> PIL ink(1) sets the panel bit (bit 1 = lit)
-       ink_is_one=False -> PIL ink(1) clears the bit (bit 0 = lit)"""
+def encode(img, ink_is_one, msb_first=True):
+    """ink_is_one=True  -> PIL ink(1) sets the panel bit (set bit = dark)
+       msb_first=True   -> bit 7 is the LEFTMOST pixel of each byte.
+
+    Confirmed on hardware. Reading put_pixel() in sh1107.rs suggests LSB-first
+    (bitnum = x + y*128; buffer[bitnum/32] |= 1 << (bitnum%32)), but the panel
+    actually latches each byte MSB-first. Get this wrong and every group of 8
+    horizontal pixels is mirrored: solid fills and thick bars still look almost
+    right, while curves and fine detail shatter into a mirrored kaleidoscope.
+    A calibration frame of solid 0xFF bytes CANNOT detect this -- 0xFF is
+    symmetric under bit reversal. Use an asymmetric byte (see make_cal.py)."""
     px = img.load()
     fb = bytearray(FB)
     for y in range(H):
@@ -171,13 +179,15 @@ def encode(img, ink_is_one):
             ink = bool(px[x, y])
             if ink == ink_is_one:
                 bn = x + y * W
-                fb[bn >> 3] |= 1 << (bn & 7)
+                bit = (7 - (bn & 7)) if msb_first else (bn & 7)
+                fb[bn >> 3] |= 1 << bit
     return bytes(fb)
 
 
 def main():
     out, design, xf = sys.argv[1], sys.argv[2], sys.argv[3]
     pol = sys.argv[4] if len(sys.argv) > 4 else "inv"   # inv => ink bit = 1
+    bits = sys.argv[5] if len(sys.argv) > 5 else "msb"  # msb => bit7 leftmost
     img = DESIGNS[design]()
     # Preview rendered as the panel will actually show it: with pol=inv the
     # ink bit is 1 which reads DARK on a lit field, so invert for the preview.
@@ -186,7 +196,7 @@ def main():
         prev = ImageOps.invert(img.convert("L")).convert("1")
     prev.resize((384, 384), Image.NEAREST).save(out + ".preview.png")
     img = TRANSFORMS[xf](img)
-    fb = encode(img, ink_is_one=(pol == "inv"))
+    fb = encode(img, ink_is_one=(pol == "inv"), msb_first=(bits == "msb"))
     lines = []
     for i in range(FB // CHUNK):
         payload = struct.pack(">H", i) + fb[i * CHUNK:(i + 1) * CHUNK]

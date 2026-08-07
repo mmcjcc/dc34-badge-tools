@@ -117,7 +117,7 @@ a plain linear bitmap:
 byte = (x + y*128) / 8        bit = (x + y*128) % 8       (LSB = leftmost pixel)
 ```
 
-i.e. **row-major, 16 bytes per row, LSB-first**.
+i.e. **row-major, 16 bytes per row**.
 
 **Verified on hardware** with `tools/make_cal.py`, which writes raw framebuffer bytes and
 bypasses any pixel model:
@@ -127,7 +127,28 @@ bypasses any pixel model:
 | `0..15` | horizontal line across the top | vertical line down the left | **horizontal, across the top** |
 | `1024` | 8px horizontal dash at mid-height | 8px vertical dash | **horizontal dash, mid-height** |
 
-Row-major is therefore confirmed, and no transform is needed (`transform = id`).
+Row-major is confirmed, and no transform is needed (`transform = id`).
+
+### Bit order: the trap
+
+Reading `put_pixel()` implies **LSB-first** (`x` increasing means bit index increasing).
+**That is wrong on real hardware — the panel latches each byte MSB-first, so bit 7 is the
+leftmost pixel of its 8-pixel cell.**
+
+Get it backwards and every group of 8 horizontal pixels is mirrored in place. The failure
+is deceptive:
+
+* solid fills, thick bars and blocky glyphs still look *almost* right, because a 20px-wide
+  bar spans about three byte-cells and stays roughly solid when each cell flips;
+* curves and any feature finer than ~8px shatter into a mirrored kaleidoscope — symmetric
+  detail appears **duplicated**, which looks like a framebuffer-layout bug and sends you
+  hunting for a transform that does not exist.
+
+**A calibration frame of solid `0xFF` bytes cannot detect this**, because `0xFF` is
+symmetric under bit reversal — the very test you would reach for reports success. Use an
+asymmetric byte instead: `make_cal.py` writes `0xC0` across two rows, which renders as a
+2px dash at the **left** of each 8px cell when the order is correct, and at the **right**
+when it is reversed.
 
 ### Panel addressing
 

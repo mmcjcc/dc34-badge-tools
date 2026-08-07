@@ -34,6 +34,17 @@ for i in range(64, 80):
     fb[i] = 0xFF
 fb[1024] = 0xFF
 
+# --- bit-order probe -------------------------------------------------------
+# CRITICAL: 0xFF is symmetric under bit reversal, so the marks above cannot
+# tell LSB-first from MSB-first. Rows 40 and 48 use an ASYMMETRIC byte so the
+# ordering is directly readable: each 0xC0 is a 2px dash inside an 8px cell.
+#   MSB-first (correct here) -> dash sits at the LEFT of each 8px cell
+#   LSB-first                -> dash sits at the RIGHT of each 8px cell
+for i in range(16):
+    fb[40 * 16 + i] = 0xC0
+# A single isolated 0xC0 at the far left of row 48 shows the absolute edge.
+fb[48 * 16] = 0xC0
+
 lines = []
 for i in range(FB // CHUNK):
     payload = struct.pack(">H", i) + bytes(fb[i * CHUNK:(i + 1) * CHUNK])
