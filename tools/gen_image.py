@@ -104,16 +104,19 @@ def design_peach():
     d = ImageDraw.Draw(img)
     cx = 64
 
-    # ---- hair: THICK ring so blonde reads light, face inside ------------
+    # ---- hair: thick outline so blonde reads LIGHT, with a centre parting
     # Everything here is >=4px: fine linework does not survive on this panel.
     d.ellipse([22, 24, 106, 108], fill=1)      # hair silhouette (solid)
     d.ellipse([28, 30, 100, 102], fill=0)      # hollow it out -> thick ring
-    d.ellipse([20, 54, 50, 122], fill=1)       # long lobe L
-    d.ellipse([26, 60, 44, 116], fill=0)
-    d.ellipse([78, 54, 108, 122], fill=1)      # long lobe R
-    d.ellipse([84, 60, 102, 116], fill=0)
+    d.ellipse([20, 52, 50, 124], fill=1)       # long lobe L
+    d.ellipse([26, 58, 44, 118], fill=0)
+    d.ellipse([78, 52, 108, 124], fill=1)      # long lobe R
+    d.ellipse([84, 58, 102, 118], fill=0)
     d.ellipse([40, 32, 88, 94], fill=0)        # face opening
-    d.arc([40, 28, 88, 76], 185, 355, fill=1, width=6)   # fringe
+    d.arc([40, 26, 88, 74], 195, 345, fill=1, width=5)   # fringe
+    d.line([(64, 27), (64, 40)], fill=1, width=4)        # centre parting
+    d.arc([44, 26, 66, 58], 200, 300, fill=1, width=4)   # sweep L
+    d.arc([62, 26, 84, 58], 240, 340, fill=1, width=4)   # sweep R
 
     # ---- crown: band + three points --------------------------------------
     d.rectangle([46, 23, 82, 32], fill=1)
@@ -253,17 +256,20 @@ def design_toad():
     img = Image.new("1", (W, H), 0)
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W - 1, H - 1], outline=1)
-    d.pieslice([8, 8, 120, 104], 180, 360, fill=1)        # mushroom cap
-    d.rectangle([8, 54, 120, 66], fill=1)
-    for box in ([24, 24, 50, 50], [78, 24, 104, 50],
-                [54, 14, 74, 34], [12, 40, 30, 58], [98, 40, 116, 58]):
-        d.ellipse(box, fill=0)                            # spots
-    d.ellipse([34, 62, 94, 122], fill=0, outline=1, width=3)   # head
-    d.ellipse([48, 78, 58, 96], fill=1)                   # eyes
-    d.ellipse([70, 78, 80, 96], fill=1)
-    d.arc([54, 96, 74, 112], 20, 160, fill=1, width=3)    # mouth
-    d.ellipse([36, 92, 46, 102], fill=1)                  # cheeks
-    d.ellipse([82, 92, 92, 102], fill=1)
+    # Cap: outlined (Toad's cap is white with red blotches) so it does not read
+    # as one solid slab, and it sits ON the head rather than floating above it.
+    d.pieslice([6, 10, 122, 108], 180, 360, fill=0, outline=1, width=4)
+    d.line([(6, 59), (122, 59)], fill=1, width=4)         # cap brim
+    for box in ([22, 20, 52, 50], [76, 20, 106, 50], [56, 14, 72, 30]):
+        d.ellipse(box, fill=1)                            # blotches
+    d.ellipse([14, 36, 32, 54], fill=1)
+    d.ellipse([96, 36, 114, 54], fill=1)
+    d.ellipse([38, 60, 90, 120], fill=0, outline=1, width=4)   # face
+    d.ellipse([49, 76, 59, 94], fill=1)                   # eyes
+    d.ellipse([69, 76, 79, 94], fill=1)
+    d.arc([56, 96, 72, 110], 20, 160, fill=1, width=4)    # mouth
+    d.ellipse([40, 92, 50, 102], fill=1)                  # cheeks
+    d.ellipse([78, 92, 88, 102], fill=1)
     return img
 
 
