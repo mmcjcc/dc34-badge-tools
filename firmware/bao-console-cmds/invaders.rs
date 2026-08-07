@@ -82,6 +82,48 @@ fn blit(fb: &mut [u32; 512], rows: &[u16; 8], w: isize, x: isize, y: isize) {
     }
 }
 
+/// Attract-mode AI: steer toward the nearest live alien column and fire when
+/// roughly lined up. Deliberately imperfect -- it should look like play, not a
+/// solver, and it will eventually lose, which restarts the demo.
+fn autopilot(g: &Game) -> (isize, bool) {
+    let mut target_x: Option<isize> = None;
+    let mut best_y = -1isize;
+    for r in 0..ROWS {
+        for c in 0..COLS {
+            if !g.alive[r][c] {
+                continue;
+            }
+            let (x, y, w, _) = g.abox(r, c);
+            // prefer the lowest (most dangerous) row
+            if y > best_y {
+                best_y = y;
+                target_x = Some(x + w / 2);
+            }
+        }
+    }
+    let muzzle = g.player + 13 * SCALE / 2;
+    match target_x {
+        Some(tx) => {
+            let d = if tx > muzzle + 3 { 1 } else if tx < muzzle - 3 { -1 } else { 0 };
+            (d, d == 0)
+        }
+        None => (0, false),
+    }
+}
+
+/// Flash the badge LEDs. Pin 15 / 10 pixels, per bunnie/dc34-console leds.rs.
+/// Best-effort: if the BIO claim fails we simply skip, never block the game.
+#[cfg(feature = "bio-lib")]
+fn led_flash(r: u8, g: u8, b: u8) {
+    use arbitrary_int::u5;
+    use bio_lib::ws2812::{LedVariant, Ws2812, rgb_to_u32};
+    if let Ok(mut ws) = Ws2812::new(LedVariant::C, u5::new(15), None) {
+        ws.send_async(&[rgb_to_u32(r, g, b); 10]);
+    }
+}
+#[cfg(not(feature = "bio-lib"))]
+fn led_flash(_r: u8, _g: u8, _b: u8) {}
+
 struct Game {
     alive: [[bool; COLS]; ROWS],
     fx: isize,
@@ -276,7 +318,10 @@ impl<'a> ShellCmdApi<'a> for Invaders {
         }
 
         let mut fb = [0xFFFF_FFFFu32; 512];
-        let mut g = Game::new(_env.trng.get_u32().unwrap_or(0x1234_5678));
+        let mut seed = _env.trng.get_u32().unwrap_or(0x1234_5678);
+        let mut g = Game::new(seed);
+        // Attract mode until a button is touched, then the human is driving.
+        let mut demo = true;
 
         // Pace off the ticktimer's own clock. sleep_ms() alone did not delay
         // (3000 frames burned in ~30s), so hold a target deadline per frame and
@@ -288,18 +333,35 @@ impl<'a> ShellCmdApi<'a> for Invaders {
         let mut next = t0 + FRAME_MS;
         let reason;
         loop {
-            if g.over { reason = "destroyed"; break; }
+            if g.over {
+                if demo {
+                    // Attract mode never ends on its own: reseed and play again.
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    g = Game::new(seed);
+                    gfx.brightness(BRIGHT).ok(); // survive a reboot resetting it
+                    continue;
+                }
+                reason = "destroyed";
+                break;
+            }
             if quit.load(Ordering::Relaxed) { reason = "quit"; break; }
             let now = tt.elapsed_ms();
             if now - t0 > RUN_MS { reason = "timeout"; break; }
 
-            let d = dx.swap(0, Ordering::Relaxed) as isize;
-            let f = fire.swap(false, Ordering::Relaxed);
+            let hd = dx.swap(0, Ordering::Relaxed) as isize;
+            let hf = fire.swap(false, Ordering::Relaxed);
+            if hd != 0 || hf {
+                demo = false; // a human touched a button - stop autopiloting
+            }
+            let (d, f) = if demo { autopilot(&g) } else { (hd, hf) };
             let _killed = g.step(d, f);
             g.render(&mut fb);
             gfx.bitmap(&fb, None, None).ok();
             gfx.flush().ok();
             frames += 1;
+            if frames % 20 == 0 {
+                gfx.brightness(BRIGHT).ok();
+            }
 
             // spin-with-yield until the frame deadline; robust even if
             // sleep_ms is a no-op on this build
@@ -315,5 +377,100 @@ impl<'a> ShellCmdApi<'a> for Invaders {
         let secs = (tt.elapsed_ms() - t0) as f32 / 1000.0;
         write!(ret, "game over ({}) - score {} - {} frames in {:.1}s", reason, g.score, frames, secs).ok();
         Ok(Some(ret))
+    }
+}
+
+/// Attract-mode entry point, called from main() at boot on its own thread.
+///
+/// This is why the badge draws anything at all on its own: bao-console
+/// otherwise just waits for serial commands while the panel sits at zero
+/// brightness, which looks exactly like a dead badge. Never returns.
+pub fn run_attract() -> ! {
+    use ux_api::service::gfx::Gfx;
+    let xns = xous_names::XousNames::new().unwrap();
+    let tt = ticktimer::Ticktimer::new().unwrap();
+    // The graphics server may not be up yet; keep trying rather than giving up.
+    let gfx = loop {
+        if let Ok(g) = Gfx::new(&xns) {
+            break g;
+        }
+        tt.sleep_ms(500).ok();
+    };
+
+    let dx = Arc::new(AtomicI32::new(0));
+    let fire = Arc::new(AtomicBool::new(false));
+    {
+        let (dx, fire) = (dx.clone(), fire.clone());
+        std::thread::spawn(move || {
+            let xns = xous_names::XousNames::new().unwrap();
+            if let Ok(kbd) = bao1x_api::keyboard::Keyboard::new(&xns) {
+                loop {
+                    for c in kbd.get_keys_blocking() {
+                        match c {
+                            '\u{2190}' => dx.store(-1, Ordering::Relaxed),
+                            '\u{2192}' => dx.store(1, Ordering::Relaxed),
+                            '\u{1F525}' => fire.store(true, Ordering::Relaxed),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // boot1 arms a 60s reset watchdog whenever we are on battery, and nothing
+    // in xous-core feeds it on bao1x -- that is the mystery reboot. Feed it.
+    let mut wdt = bao1x_hal::wdt::Wdt::new();
+
+    let mut fb = [0xFFFF_FFFFu32; 512];
+    let mut seed = 0xC0FF_EE01u32;
+    let mut g = Game::new(seed);
+    let mut demo = true;
+    let mut idle_ms: u32 = 0;
+    let mut frames = 0u32;
+    gfx.brightness(BRIGHT).ok();
+
+    loop {
+        let hd = dx.swap(0, Ordering::Relaxed) as isize;
+        let hf = fire.swap(false, Ordering::Relaxed);
+        if hd != 0 || hf {
+            demo = false;
+            idle_ms = 0;
+        } else if !demo {
+            // hand back to the demo after 20s of no input
+            idle_ms = idle_ms.saturating_add(100);
+            if idle_ms > 20_000 {
+                demo = true;
+            }
+        }
+        let (d, f) = if demo { autopilot(&g) } else { (hd, hf) };
+        let killed = g.step(d, f);
+        if killed {
+            led_flash(255, 40, 0); // orange pop on every alien destroyed
+        }
+
+        if g.over {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            g = Game::new(seed);
+            demo = true;
+            gfx.brightness(BRIGHT).ok();
+        }
+
+        g.render(&mut fb);
+        gfx.bitmap(&fb, None, None).ok();
+        gfx.flush().ok();
+
+        frames = frames.wrapping_add(1);
+        wdt.feed(); // else the badge resets every 60s on battery
+
+        if killed {
+            led_flash(0, 0, 0); // brief pop, then back off
+        }
+        // Re-assert brightness periodically: it starts at zero, so anything
+        // that resets the panel would otherwise leave a black screen forever.
+        if frames % 50 == 0 {
+            gfx.brightness(BRIGHT).ok();
+        }
+        tt.sleep_ms(100).ok();
     }
 }

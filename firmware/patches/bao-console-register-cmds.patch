@@ -1,8 +1,8 @@
 diff --git a/services/bao-console/src/cmds.rs b/services/bao-console/src/cmds.rs
-index 6f3d48a0f..4ceadbadc 100644
+index 6f3d48a0f..cf66fbf65 100644
 --- a/services/bao-console/src/cmds.rs
 +++ b/services/bao-console/src/cmds.rs
-@@ -101,6 +101,12 @@ mod i2cdetect;
+@@ -101,6 +101,13 @@ mod i2cdetect;
  use i2cdetect::*;
  mod cute;
  use cute::*;
@@ -12,10 +12,11 @@ index 6f3d48a0f..4ceadbadc 100644
 +use screen::*;
 +mod invaders;
 +use invaders::*;
++pub use invaders::run_attract;
  #[cfg(feature = "rramtests")]
  mod rram;
  #[cfg(feature = "rramtests")]
-@@ -167,6 +173,9 @@ impl CmdEnv {
+@@ -167,6 +174,9 @@ impl CmdEnv {
          #[cfg(not(feature = "hosted-baosec"))]
          let mut i2cdetect_cmd = I2cDetect {};
          let mut cute_cmd = Cute {};
@@ -25,7 +26,7 @@ index 6f3d48a0f..4ceadbadc 100644
  
          let commands: &mut [&mut dyn ShellCmdApi] = &mut [
              ///// 4. add your command to this array, so that it can be looked up and dispatched
-@@ -176,6 +185,9 @@ impl CmdEnv {
+@@ -176,6 +186,9 @@ impl CmdEnv {
              #[cfg(not(feature = "hosted-baosec"))]
              &mut i2cdetect_cmd,
              &mut cute_cmd,

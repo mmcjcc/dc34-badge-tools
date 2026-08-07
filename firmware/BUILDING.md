@@ -1,5 +1,71 @@
 # Running your own firmware on the DC34 badge
 
+## READ THIS FIRST: the badge firmware is PUBLIC, under the `bunnie` org
+
+Not `baochip`, not `betrusted-io` — **`bunnie`**. Searching the first two and
+concluding the LED code was proprietary cost us most of a day:
+
+* https://github.com/bunnie/dc34-console — the shell, **and the LED driver**
+* https://github.com/bunnie/dc34-api — `LED_SERVER = "_oem_led_"`
+* https://github.com/bunnie/dc34-vault — the vault app
+* https://github.com/bunnie/dc34-core-hw — core module hardware
+* https://github.com/bunnie/dc34-bio — BIO code loader
+
+`dc34-console` pins xous-core to rev `616bf65f6e379165464f50b1e79ec42aff77a683`.
+Building its code against HEAD drifts (e.g. `init_core` arity changed).
+
+## The LEDs: pin 15, 10 pixels
+
+Straight from `dc34-console/src/leds.rs`:
+
+```rust
+let sid = xns.register_name(dc34_api::LED_SERVER, None).unwrap();
+crate::bio::lightgenes::Lightgenes::new(arbitrary_int::u5::new(15), LED_COUNT, None).unwrap();
+const LED_COUNT: u8 = 10;   // 18 under the `uber` feature
+```
+
+**BIO bit 15. 10 pixels — index 0,1 are the eyes, 2..9 the ring. WS2812C-2020,
+GRB, 150 ns quantum (`TargetFreqInt(6_666_667)`).**
+
+### Do NOT call `set_bio_bit_from_port_and_pin()` for this
+
+Two reasons, and together they make brute-force sweeping impossible:
+
+1. **It is buggy for PB.** It computes `bio_bit = 15 - pin`, but the vendor
+   pinout (`baochip/dabao/docs/pinout/pins.csv`) says PB is *identity*. So
+   asking for PB15 yields bit 0, and bit 15 demands PB0 — **no argument can
+   produce AF1-on-PB15 together with PIOSEL bit 15.** A sweep over that helper
+   is structurally incapable of lighting these LEDs. PC (`pin + 16`) is fine,
+   which is why SAO work behaves normally.
+2. **The driver already does the mux.** `Ws2812::new()` / `Lightgenes::new()`
+   set `io_config.mapped = 1 << bio_pin` and call `setup_io_config()`, which
+   performs `set_alternate_function(.., AF1)` plus PIOSEL. Worse,
+   `IoConfigMode::Overwrite` *clears every PIOSEL bit not in the mask*, so
+   manual pre-configuration is wiped by the constructor.
+
+Also: `board/baosec.rs::setup_pmic_irq()` configures **(PB, 15)** as an IRQ
+input — a leftover from the reference board. Do not call it; it fights the LED
+driver for this exact pin.
+
+## The badge resets every ~60s on battery: it is a watchdog
+
+`bao1x-boot/boot1/src/platform/bao1x/bao1x.rs`, gated on `oem-baosec-lite`
+(what this badge builds as):
+
+```rust
+if iox.get_gpio_pin_value(PA, 4) == IoxValue::Low {   // PA4 = VBUS detect
+    let mut wdt = bao1x_hal::wdt::Wdt::new();
+    wdt.enable((50_000_000 / 2) * 60, true);          // 60s, RESET enabled
+}
+```
+
+Nothing in xous-core feeds it on bao1x — `xous-ticktimer`'s `watchdog` feature
+covers precursor/hosted/renode only. So: **resets roughly every 60 seconds on
+batteries, never on USB.** Either feed it (`Wdt::new().feed()` in your main
+loop, which keeps the safety net) or `disable()` it.
+
+
+
 Everything here needs **developer mode**, which is **irreversible**: `boot1`
 erases the device's initial secrets and increments a one-way counter the first
 time it validates a developer-signed image. The light-pattern exchange stops

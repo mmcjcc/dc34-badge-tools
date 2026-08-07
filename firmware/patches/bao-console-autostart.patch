@@ -1,0 +1,27 @@
+diff --git a/services/bao-console/src/main.rs b/services/bao-console/src/main.rs
+index d9688786e..46d8808b6 100644
+--- a/services/bao-console/src/main.rs
++++ b/services/bao-console/src/main.rs
+@@ -21,6 +21,22 @@ fn main() {
+ 
+     tt.sleep_ms(4000).ok();
+ 
++    // ---- auto-start the attract-mode game -------------------------------
++    // Without this the badge draws NOTHING on its own: bao-console just waits
++    // for serial input, and the OLED starts at zero brightness, so the screen
++    // looks dead. Runs the demo forever; pressing a button takes over.
++    #[cfg(feature = "board-baosec")]
++    {
++        std::thread::Builder::new()
++            .name("attract_thread".to_string())
++            .spawn(move || {
++                let tt = ticktimer::Ticktimer::new().unwrap();
++                tt.sleep_ms(2500).ok(); // let bao-video finish coming up
++                crate::cmds::run_attract();
++            })
++            .ok();
++    }
++
+     #[cfg(all(feature = "board-baosec", feature = "test-flash"))]
+     {
+         use xous_swapper::FlashPage;
