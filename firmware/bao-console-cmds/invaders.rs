@@ -111,18 +111,34 @@ fn autopilot(g: &Game) -> (isize, bool) {
     }
 }
 
-/// Flash the badge LEDs. Pin 15 / 10 pixels, per bunnie/dc34-console leds.rs.
-/// Best-effort: if the BIO claim fails we simply skip, never block the game.
+/// Badge LEDs: pin 15, 10 pixels (0,1 = eyes; 2..9 = ring), per
+/// bunnie/dc34-console/src/leds.rs. Best-effort -- never block the game.
+///
+/// `ttl > 0` means a recent kill: flash orange. Otherwise idle on a slow hue
+/// cycle so the badge looks alive when nothing is happening.
 #[cfg(feature = "bio-lib")]
-fn led_flash(r: u8, g: u8, b: u8) {
+fn led_update(hue: u8, ttl: u8) {
     use arbitrary_int::u5;
     use bio_lib::ws2812::{LedVariant, Ws2812, rgb_to_u32};
+    let (r, g, b) = if ttl > 0 {
+        (255u8, 40u8, 0u8)
+    } else {
+        // integer HSV at low value -- easy on two AA cells
+        match hue / 43 {
+            0 => (40, hue.wrapping_mul(6) / 6, 0),
+            1 => (40u8.saturating_sub(hue / 6), 40, 0),
+            2 => (0, 40, hue / 6),
+            3 => (0, 40u8.saturating_sub(hue / 6), 40),
+            4 => (hue / 6, 0, 40),
+            _ => (40, 0, 40u8.saturating_sub(hue / 6)),
+        }
+    };
     if let Ok(mut ws) = Ws2812::new(LedVariant::C, u5::new(15), None) {
         ws.send_async(&[rgb_to_u32(r, g, b); 10]);
     }
 }
 #[cfg(not(feature = "bio-lib"))]
-fn led_flash(_r: u8, _g: u8, _b: u8) {}
+fn led_update(_hue: u8, _ttl: u8) {}
 
 struct Game {
     alive: [[bool; COLS]; ROWS],
@@ -428,6 +444,8 @@ pub fn run_attract() -> ! {
     let mut demo = true;
     let mut idle_ms: u32 = 0;
     let mut frames = 0u32;
+    let mut flash_ttl: u8 = 0;
+    let mut hue: u8 = 0;
     gfx.brightness(BRIGHT).ok();
 
     loop {
@@ -446,7 +464,7 @@ pub fn run_attract() -> ! {
         let (d, f) = if demo { autopilot(&g) } else { (hd, hf) };
         let killed = g.step(d, f);
         if killed {
-            led_flash(255, 40, 0); // orange pop on every alien destroyed
+            flash_ttl = 3; // ~300ms of orange, decremented per frame
         }
 
         if g.over {
@@ -463,9 +481,9 @@ pub fn run_attract() -> ! {
         frames = frames.wrapping_add(1);
         wdt.feed(); // else the badge resets every 60s on battery
 
-        if killed {
-            led_flash(0, 0, 0); // brief pop, then back off
-        }
+        hue = hue.wrapping_add(1);
+        led_update(hue, flash_ttl);
+        flash_ttl = flash_ttl.saturating_sub(1);
         // Re-assert brightness periodically: it starts at zero, so anything
         // that resets the panel would otherwise leave a black screen forever.
         if frames % 50 == 0 {
