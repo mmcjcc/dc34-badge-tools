@@ -396,27 +396,41 @@ impl<'a> ShellCmdApi<'a> for Invaders {
     }
 }
 
-/// Attract-mode entry point, called from main() at boot on its own thread.
+/// Full badge app: attract-mode game, menu, LED patterns, sleep.
 ///
-/// This is why the badge draws anything at all on its own: bao-console
-/// otherwise just waits for serial commands while the panel sits at zero
-/// brightness, which looks exactly like a dead badge. Never returns.
+/// BUTTONS
+///   Select ('\u{2234}') .. open / close the menu   <- the side toggle
+///   Up / Down ............ move the menu cursor
+///   Center / fire ........ choose, or shoot in-game
+///   Left / Right ......... move ship in-game
+///
+/// Any button press takes the game off autopilot; 20s idle hands it back.
 pub fn run_attract() -> ! {
+    use crate::cmds::menu::{self, GameKind, Item, LedMode};
     use ux_api::service::gfx::Gfx;
+
     let xns = xous_names::XousNames::new().unwrap();
     let tt = ticktimer::Ticktimer::new().unwrap();
-    // The graphics server may not be up yet; keep trying rather than giving up.
     let gfx = loop {
-        if let Ok(g) = Gfx::new(&xns) {
-            break g;
-        }
+        if let Ok(g) = Gfx::new(&xns) { break g; }
         tt.sleep_ms(500).ok();
     };
 
+    // boot1 arms a 60s reset watchdog on battery and nothing in xous-core feeds
+    // it on bao1x -- that is the mystery reboot. Feed it every frame.
+    let mut wdt = bao1x_hal::wdt::Wdt::new();
+
+    // one driver for the whole run -- see menu::led_open
+    let mut leds = menu::led_open();
+
+    // ---- input thread: get_keys_blocking() blocks, so it lives off the loop
     let dx = Arc::new(AtomicI32::new(0));
     let fire = Arc::new(AtomicBool::new(false));
+    let menu_key = Arc::new(AtomicBool::new(false));
+    let updown = Arc::new(AtomicI32::new(0));
     {
-        let (dx, fire) = (dx.clone(), fire.clone());
+        let (dx, fire, menu_key, updown) =
+            (dx.clone(), fire.clone(), menu_key.clone(), updown.clone());
         std::thread::spawn(move || {
             let xns = xous_names::XousNames::new().unwrap();
             if let Ok(kbd) = bao1x_api::keyboard::Keyboard::new(&xns) {
@@ -426,6 +440,9 @@ pub fn run_attract() -> ! {
                             '\u{2190}' => dx.store(-1, Ordering::Relaxed),
                             '\u{2192}' => dx.store(1, Ordering::Relaxed),
                             '\u{1F525}' => fire.store(true, Ordering::Relaxed),
+                            '\u{2191}' => updown.store(-1, Ordering::Relaxed),
+                            '\u{2193}' => updown.store(1, Ordering::Relaxed),
+                            '\u{2234}' => menu_key.store(true, Ordering::Relaxed),
                             _ => {}
                         }
                     }
@@ -434,61 +451,137 @@ pub fn run_attract() -> ! {
         });
     }
 
-    // boot1 arms a 60s reset watchdog whenever we are on battery, and nothing
-    // in xous-core feeds it on bao1x -- that is the mystery reboot. Feed it.
-    let mut wdt = bao1x_hal::wdt::Wdt::new();
-
     let mut fb = [0xFFFF_FFFFu32; 512];
     let mut seed = 0xC0FF_EE01u32;
     let mut g = Game::new(seed);
+    let mut airsea = crate::cmds::airsea::AirSea::new(seed ^ 0x5AA5_1234);
+
+    let mut in_menu = false;
+    let mut sleeping = false;
+    let mut sel: usize = 0;
+    let mut game_kind = GameKind::Invaders;
+    let mut led_mode = LedMode::GameReactive;
+    let mut bright: u8 = 200;
     let mut demo = true;
     let mut idle_ms: u32 = 0;
-    let mut frames = 0u32;
+    let mut t: u32 = 0;
     let mut flash_ttl: u8 = 0;
-    let mut hue: u8 = 0;
-    gfx.brightness(BRIGHT).ok();
+
+    gfx.brightness(bright).ok();
 
     loop {
+        t = t.wrapping_add(1);
+        wdt.feed();
+
         let hd = dx.swap(0, Ordering::Relaxed) as isize;
         let hf = fire.swap(false, Ordering::Relaxed);
-        if hd != 0 || hf {
-            demo = false;
-            idle_ms = 0;
-        } else if !demo {
-            // hand back to the demo after 20s of no input
-            idle_ms = idle_ms.saturating_add(100);
-            if idle_ms > 20_000 {
-                demo = true;
+        let hm = menu_key.swap(false, Ordering::Relaxed);
+        let hu = updown.swap(0, Ordering::Relaxed);
+        let any = hd != 0 || hf || hm || hu != 0;
+
+        // ---- sleep: everything dark until a button wakes it ---------------
+        if sleeping {
+            if any {
+                sleeping = false;
+                gfx.set_power(true).ok();
+                gfx.brightness(bright).ok();
+            } else {
+                menu::led_push(&mut leds, &[(0, 0, 0); menu::LED_N]);
+                tt.sleep_ms(150).ok();
+                continue;
             }
         }
-        let (d, f) = if demo { autopilot(&g) } else { (hd, hf) };
-        let killed = g.step(d, f);
-        if killed {
-            flash_ttl = 3; // ~300ms of orange, decremented per frame
+
+        if hm {
+            in_menu = !in_menu;
+            gfx.brightness(bright).ok();
         }
 
-        if g.over {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            g = Game::new(seed);
-            demo = true;
-            gfx.brightness(BRIGHT).ok();
+        if in_menu {
+            // ---- menu navigation ------------------------------------------
+            if hu != 0 {
+                let n = menu::ITEMS.len() as i32;
+                sel = (((sel as i32 + hu) % n + n) % n) as usize;
+            }
+            if hf {
+                match menu::ITEMS[sel] {
+                    Item::Resume => in_menu = false,
+                    Item::Game => {
+                        game_kind = game_kind.next();
+                        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                        g = Game::new(seed);
+                        demo = true;
+                    }
+                    Item::Leds => led_mode = led_mode.next(),
+                    Item::Bright => {
+                        bright = match bright { 0..=79 => 120, 80..=159 => 200, 160..=239 => 255, _ => 40 };
+                        gfx.brightness(bright).ok();
+                    }
+                    Item::Sleep => {
+                        sleeping = true;
+                        in_menu = false;
+                        menu::led_push(&mut leds, &[(0, 0, 0); menu::LED_N]);
+                        gfx.set_power(false).ok();
+                        tt.sleep_ms(300).ok();
+                        continue;
+                    }
+                }
+            }
+            menu::draw_menu(&mut fb, sel, game_kind, led_mode, bright);
+        } else {
+            // ---- game ------------------------------------------------------
+            if hd != 0 || hf { demo = false; idle_ms = 0; }
+            else if !demo {
+                idle_ms = idle_ms.saturating_add(100);
+                if idle_ms > 20_000 { demo = true; }
+            }
+            match game_kind {
+                GameKind::Invaders => {
+                    let (d, f) = if demo { autopilot(&g) } else { (hd, hf) };
+                    if g.step(d, f) { flash_ttl = 3; }
+                    if g.over {
+                        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                        g = Game::new(seed);
+                        demo = true;
+                        gfx.brightness(bright).ok();
+                    }
+                    g.render(&mut fb);
+                }
+                GameKind::AirSea => {
+                    // simple autopilot: track the lowest live target and fire
+                    let (d, f) = if demo {
+                        let mut tx = None;
+                        let mut best = -1isize;
+                        for t in airsea.targets.iter() {
+                            if t.alive && t.y > best { best = t.y; tx = Some(t.x + 5); }
+                        }
+                        let muzzle = airsea.gun_x + 5;
+                        match tx {
+                            Some(x) => {
+                                let d = if x > muzzle + 3 { 1 } else if x < muzzle - 3 { -1 } else { 0 };
+                                (d, d == 0)
+                            }
+                            None => (0, false),
+                        }
+                    } else { (hd, hf) };
+                    if airsea.step(d, f) { flash_ttl = 3; }
+                    airsea.render(&mut fb);
+                }
+            }
         }
 
-        g.render(&mut fb);
         gfx.bitmap(&fb, None, None).ok();
         gfx.flush().ok();
 
-        frames = frames.wrapping_add(1);
-        wdt.feed(); // else the badge resets every 60s on battery
-
-        hue = hue.wrapping_add(1);
-        led_update(hue, flash_ttl);
+        // ---- LEDs --------------------------------------------------------
+        let strip = menu::led_frame(led_mode, t, flash_ttl > 0);
+        menu::led_push(&mut leds, &strip);
         flash_ttl = flash_ttl.saturating_sub(1);
-        // Re-assert brightness periodically: it starts at zero, so anything
-        // that resets the panel would otherwise leave a black screen forever.
-        if frames % 50 == 0 {
-            gfx.brightness(BRIGHT).ok();
-        }
+
+        // Re-assert brightness periodically: it starts at zero, so any reset
+        // would otherwise leave a black screen forever.
+        if t % 50 == 0 { gfx.brightness(bright).ok(); }
+
         tt.sleep_ms(100).ok();
     }
 }
