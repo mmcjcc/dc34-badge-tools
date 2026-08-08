@@ -1,5 +1,25 @@
 # Running your own firmware on the DC34 badge
 
+## What this firmware does (all confirmed working on hardware)
+
+Boots straight into a game — no host needed.
+
+* **Two games**, both with attract-mode autopilot; press any button to take
+  over, 20s idle hands it back.
+  * **Space Invaders** — 3 alien types, fleet accelerates as it thins, bombs,
+    30/20/10 scoring by row.
+  * **Air-Sea Battle** — planes cross three altitudes at random speeds and
+    directions, boats on the waterline. Higher planes score more.
+* **Menu** on the side **Select** button. Up/Down to move, Center to pick.
+  * Resume · Game · LEDs · Bright · Sleep
+* **LED patterns** on the 10-pixel strip (0,1 = eyes on the back; 2..9 = front
+  ring): Game-reactive · Rainbow · Chase · Blink · **SOS** (real morse) ·
+  **Random** (re-rolls scene, palette and speed every ~3s across sparkle, wave,
+  strobe and twinkle) · Off
+* **Sleep** — screen and LEDs off, any button wakes.
+* **No more 60s battery resets** — the loop feeds the watchdog boot1 arms.
+
+
 ## READ THIS FIRST: the badge firmware is PUBLIC, under the `bunnie` org
 
 Not `baochip`, not `betrusted-io` — **`bunnie`**. Searching the first two and
